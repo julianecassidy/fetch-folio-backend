@@ -66,6 +66,12 @@ class Dog(db.Model):
         nullable=False,
     )
 
+    commands = db.relationship("Command", backref="dog")
+
+    events = db.relationship("Event", backref="dog")
+
+    # owner = relationship from a dog to it's owner(user)
+
 
 class User(db.Model):
     """User class."""
@@ -101,6 +107,8 @@ class User(db.Model):
         db.Text,
         nullable=False,
     )
+
+    dogs = db.relationship("Dog", backref='owner')
 
 
 class Command(db.Model):
@@ -166,15 +174,19 @@ class Command(db.Model):
         nullable=False,
     )
 
-    dog = db.Column(
+    dog_id = db.Column(
         db.Integer,
         db.ForeignKey('dogs.id'),
         nullable=False,
     )
 
+    notes = db.relationship("Note", backref="command")
+
+    # dog = relationship from command to the dog
+
 
 class CommandNote(db.Model):
-    """CommandModel class."""
+    """CommandNote class."""
 
     __tablename__ = 'commands_notes'
 
@@ -200,6 +212,8 @@ class CommandNote(db.Model):
         db.ForeignKey('commands.id'),
         nullable=False,
     )
+
+    # command = relationship from note to a command
 
 
 class CommandTemplate(db.Model):
@@ -292,7 +306,7 @@ class Event(db.Model):
         default=datetime.utcnow + timedelta(hours=1),
     )
 
-    dog = db.Column(
+    dog_id = db.Column(
         db.Integer,
         db.ForeignKey('dogs.id'),
         nullable=False,
@@ -303,6 +317,8 @@ class Event(db.Model):
         db.ForeginKey('events_types.type'),
         nullable=False,
     )
+
+    # dog = relationship from an event to the dog
 
 
 class EventType(db.Model):
