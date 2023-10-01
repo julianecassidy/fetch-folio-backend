@@ -73,6 +73,30 @@ class Dog(db.Model):
     # owner = relationship from a dog to it's owner(user)
 
 
+class Login(db.Model):
+    """Login class."""
+
+    __tablename__ = 'logins'
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True,
+    )
+
+    username = db.Column(
+        db.String(50),
+        nullable=False,
+        unique=True,
+    )
+
+    password = db.Column(
+        db.Text,
+        nullable=False,
+    )
+
+    user = db.relationship("User", backref='login')
+
+
 class User(db.Model):
     """User class."""
 
@@ -84,15 +108,8 @@ class User(db.Model):
     )
 
     email = db.Column(
-        db.Text,
+        db.String(50),
         nullable=False,
-        unique=True,
-    )
-
-    username = db.Column(
-        db.Text,
-        nullable=False,
-        unique=True,
     )
 
     bio = db.Column(
@@ -103,12 +120,15 @@ class User(db.Model):
         db.Text,
     )
 
-    password = db.Column(
-        db.Text,
+    username = db.Column(
+        db.String(50),
+        db.ForeignKey('logins.id'),
         nullable=False,
     )
 
     dogs = db.relationship("Dog", backref='owner')
+
+    # login = relationship from a user to their login info
 
 
 class Command(db.Model):
@@ -303,7 +323,7 @@ class Event(db.Model):
     end_time = db.Column(
         db.DateTime,
         nullable=False,
-        default=datetime.utcnow + timedelta(hours=1),
+        default=datetime.utcnow() + timedelta(hours=1),
     )
 
     dog_id = db.Column(
@@ -314,7 +334,7 @@ class Event(db.Model):
 
     type = db.Column(
         db.String(30),
-        db.ForeginKey('events_types.type'),
+        db.ForeignKey('events_types.type'),
         nullable=False,
     )
 
