@@ -14,7 +14,7 @@ import logging
 import uuid
 
 
-from models import db, connect_db, User, Login, Dog, Command, CommandNote, CommandTemplate, Event
+from models import db, connect_db, User, Dog, Command, CommandNote, CommandTemplate, Event
 from auth_middleware import require_user
 
 load_dotenv()
@@ -51,11 +51,12 @@ def add_user_to_g():
     if token:
         try:
             data = jwt.decode(token, os.environ['SECRET_KEY'], algorithms=["HS256"])
-            current_username = Login.query.get(data["username"])
+            current_username = User.query.get(data["username"])
             if current_username is None:
                 raise Unauthorized("Invalid token.")
             else:
-                g.user = current_username.user
+                g.user = current_username
+                print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", "g", g.user)
             
         except Exception as e:
             g.user = None
@@ -73,25 +74,20 @@ def signup():
     """
 
     try:
-        Login.signup(
+        User.signup(
             username=request.json["username"],
             password=request.json["password"],
-        )
-
-        user = User (
             name=request.json["name"],
-            email=request.json["username"],
-            username=request.json["username"],
+            email=request.json["email"],
         )
 
-        User.add(user)
         db.session.commit()
 
     except IntegrityError:
         db.session.rollback()
         raise BadRequest("Username already in use. No user created.")
 
-    token = Login.create_token(request.json["username"])
+    token = User.create_token(request.json["username"])
     return jsonify(token)
 
 
@@ -102,7 +98,7 @@ def login():
     Taken JSON email/username and password. Return JWT if valid user.
     If invalid, throw Unauthorized Error."""
 
-    username = Login.login(
+    username = User.login(
         username=request.json["username"],
         password=request.json["password"]
     )
@@ -110,7 +106,7 @@ def login():
     print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", "USER", username)
 
     if username:
-        token = Login.create_token(username)
+        token = User.create_token(username)
         return jsonify(token)
     
     else:
@@ -166,3 +162,25 @@ def delete_user(username):
 
     # return f"{username} deleted"
     return "this method is coming soon"
+
+
+##################################################################### Dog Routes
+
+@app.get('/dogs')
+@require_user
+def get_dogs():
+    """Get all dogs in databse not marked private. Must be logged in."""
+
+    dogs_instances = Dog.query.filter_by(private=False).all()
+
+
+@app.get('/<username>/dogs')
+@require_user
+def get_users_dogs(username):
+    """Get all dogs for a user. Must be logged in as same user in params."""
+
+
+@app.get('/<username>/dog/<dog>')
+@require_user
+def get_users_dog(username, dog):
+    """Get dog. Must be logged in as same user in params."""
