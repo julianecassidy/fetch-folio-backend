@@ -161,6 +161,7 @@ class CommandSchema(ma.SQLAlchemyAutoSchema):
             "proficiency",
             "performance_vdieo_url",
             "notes",
+            "type",
             )
         
     notes = fields.Nested(
@@ -394,20 +395,20 @@ class DogSchema(ma.SQLAlchemyAutoSchema):
             "private",
             "owner_username",
             "commands",
-            "events",
+            # "events",
         )
 
     commands = fields.Nested(
         "CommandSchema", 
-        only=("id", "name", "voice_command", "proficiency", "type", "date_updated"),
+        only=("id", "name", "voice_command", "proficiency", "date_updated"),
         many=True
     )
 
-    events = fields.Nested(
-        "EventSchema",
-        only=("id", "title" "start_time", "location", "type"),
-        many=True
-    )
+    # events = fields.Nested(
+    #     "EventSchema",
+    #     only=("id", "title", "start_time", "location", "type"),
+    #     many=True
+    # )
     
 
 class User(db.Model):

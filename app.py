@@ -14,7 +14,8 @@ import logging
 import uuid
 
 
-from models import db, connect_db, User, Dog, Command, CommandNote, CommandTemplate, Event
+from models import (db, connect_db, User, UserSchema, Dog, DogSchema,Command, CommandSchema,
+                    CommandNote, CommandNoteSchema, CommandTemplate, Event, EventSchema)
 from auth_middleware import require_user
 
 load_dotenv()
@@ -37,6 +38,11 @@ connect_db(app)
 
 debug = DebugToolbarExtension(app)
 
+users_schema = UserSchema()
+dogs_schema = DogSchema()
+commands_schema = CommandSchema()
+commands_notes_schema = CommandNoteSchema()
+events_schema = EventSchema()
 
 ######################################################  User Signup/Login/Logout
 
@@ -103,8 +109,6 @@ def login():
         password=request.json["password"]
     )
 
-    print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", "USER", username)
-
     if username:
         token = User.create_token(username)
         return jsonify(token)
@@ -121,7 +125,7 @@ def get_user(username):
     """Get user from database. Must be logged in."""
 
     user_instance = User.query.get_or_404(username)
-    user = user_instance.serialize()
+    user = users_schema.dump(user_instance)
     return jsonify(user)
 
 @app.patch('/users/<username>')
@@ -147,7 +151,7 @@ def update_user_profile(username):
         raise BadRequest
 
     updated_user_instance = User.query.get(username)
-    updated_user = updated_user_instance.serialize()
+    updated_user = users_schema.dump(updated_user_instance)
     return jsonify(updated_user)
     
 @app.delete('/users/<username>')
@@ -172,15 +176,59 @@ def get_dogs():
     """Get all dogs in databse not marked private. Must be logged in."""
 
     dogs_instances = Dog.query.filter_by(private=False).all()
+    dogs = [dog_instance.serialize for dog_instance in dogs_instances]
 
+    return jsonify(dogs)
 
 @app.get('/<username>/dogs')
 @require_user
 def get_users_dogs(username):
     """Get all dogs for a user. Must be logged in as same user in params."""
 
+    if username != g.user.username:
+        raise Unauthorized
+    
+    dogs_instances = Dog.query.filter_by(owner_username=username).all()
+    dogs = [dog_instance.serialize for dog_instance in dogs_instances]
+
+    return jsonify(dogs)
 
 @app.get('/<username>/dog/<dog>')
 @require_user
 def get_users_dog(username, dog):
     """Get dog. Must be logged in as same user in params."""
+
+    if username != g.user.username:
+        raise Unauthorized
+    
+    dog_instance = Dog.query.get_or_404(dog)
+    dog = dogs_schema.dump(dog_instance)
+
+@app.post('/<username>/dog')
+@require_user
+def add_dog(username):
+    """Add dog. Must be logged in."""
+
+    try:
+        new_dog = Dog(
+            name=request.json["name"],
+            birth_date=request.json.get("birth_date"),
+            breed=request.json["breed"],
+            size=request.json["size"],
+            bio=request.json["bio"],
+            image_url=request.json.get("image_url"),
+            private=request.json["private"] == "True",
+            owner_username=username
+        )
+
+        print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", "new dog", new_dog)
+        db.session.add(new_dog)
+        db.session.commit()
+        dog = dogs_schema.dump(new_dog)
+        return jsonify(dog)
+
+    except Exception as e:
+        db.session.rollback()
+        # raise BadRequest("Dog not created.")
+        print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", e)
+        raise BadRequest
