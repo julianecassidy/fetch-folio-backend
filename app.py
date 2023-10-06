@@ -73,10 +73,17 @@ def add_user_to_g():
 
 @app.post('/signup')
 def signup():
-    """Handle user signup.
+    """Handle user signup. Take inputted JSON user data and create new user in DB.
+      Requires:
+      {
+        "username": "jules",
+        "email": "julianecassidy@gmail.com",
+        "password": "password",
+        "name": "Jules"
+        "user_image_url": file // optional
+      }
 
-    Take inputted JSON user data and create new user in DB. Return JWT.
-    If errors, throw BadRequest Error.
+    Return JWT string. If errors, throw BadRequest Error.
     """
 
     try:
@@ -85,6 +92,7 @@ def signup():
             password=request.json["password"],
             name=request.json["name"],
             email=request.json["email"],
+            user_image_url=request.json.get("user_image_url"),
         )
 
         db.session.commit()
@@ -99,18 +107,19 @@ def signup():
 
 @app.post('/login')
 def login():
-    """Handle user login.
+    """Handle user login. Take JSON email/username and password:
+    {"username": "jules",
+    "password": "password"}
+    
+    Return JWT string if valid user. If invalid, throw Unauthorized Error."""
 
-    Taken JSON email/username and password. Return JWT if valid user.
-    If invalid, throw Unauthorized Error."""
-
-    username = User.login(
+    user = User.login(
         username=request.json["username"],
         password=request.json["password"]
     )
 
-    if username:
-        token = User.create_token(username)
+    if user:
+        token = User.create_token(user.username)
         return jsonify(token)
     
     else:
@@ -122,7 +131,18 @@ def login():
 @app.get('/users/<username>')
 @require_user
 def get_user(username):
-    """Get user from database. Must be logged in."""
+    """Get user from database. Returns:
+        {
+        "bio": null,
+        "dogs": [],
+        "email": "julianecassidy@gmail.com",
+        "location": null,
+        "name": "Jules",
+        "username": "jules"
+        "user_image_url": "https://image.com"
+        }
+
+    Must be logged in."""
 
     user_instance = User.query.get_or_404(username)
     user = users_schema.dump(user_instance)
@@ -131,18 +151,44 @@ def get_user(username):
 @app.patch('/users/<username>')
 @require_user
 def update_user_profile(username):
-    """Update a user's information. Must be logged in as same user in params."""
+    """Update a user's information. Requires password. Can also take:
+    {
+        "password": "password",
+        "name": "Jules",
+        "email": "julianecassidy@gmail.com",
+        "location": "Denver",
+        "bio": "good human",
+        "user_image_url": "https://image.com"
+    }
+
+    Returns:
+    {
+        "bio": "good human",
+        "dogs": [],
+        "email": "julianecassidy@gmail.com",
+        "location": "Denver",
+        "name": "Jules",
+        "user_image_url": "https://image.com",
+        "username": "jules"
+    }
+
+    Must be logged in as same user in params."""
 
     if username != g.user.username:
         raise Unauthorized
     
-    user = User.query.get_or_404(username)
-
+    password = request.json.get("password")
+    user = User.login(username=username, password=password)
+        
+    if not user:
+        raise Unauthorized
+    
     try:
-        user.name = request.json["name"]
-        user.email = request.json["email"],
-        user.location = request.json["location"],
-        user.bio = request.json["bio"],
+        user.name = request.json.get("name", user.name)
+        user.email = request.json.get("email", user.email),
+        user.location = request.json.get("location", user.location),
+        user.bio = request.json.get("bio", user.bio),
+        user.user_image_url = request.json.get("user_image_url", user.user_image_url)
 
         db.session.commit()
     
@@ -173,41 +219,117 @@ def delete_user(username):
 @app.get('/dogs')
 @require_user
 def get_dogs():
-    """Get all dogs in databse not marked private. Must be logged in."""
+    """Get all dogs in databse not marked private. Returns:
+    [
+        {
+            "bio": "good dog",
+            "birth_date": "Mon, 03 Aug 2020 00:00:00 GMT",
+            "breed": "Border Collie",
+            "id": 1,
+            "image_url": "https://paradepets.com/.image/c_limit%2Ccs_srgb%2Cq_auto:good%2Cw_760/MTkxMzY1Nzg4MTM2NzExNzc4/teacup-dogs-jpg.webp",
+            "name": "Petey",
+            "owner_username": "jules",
+            "private": false,
+            "size": "large"
+        },...
+    ]
+    
+    Must be logged in."""
 
     dogs_instances = Dog.query.filter_by(private=False).all()
-    dogs = [dog_instance.serialize for dog_instance in dogs_instances]
+    dogs = [dog_instance.serialize() for dog_instance in dogs_instances]
 
     return jsonify(dogs)
 
 @app.get('/<username>/dogs')
 @require_user
 def get_users_dogs(username):
-    """Get all dogs for a user. Must be logged in as same user in params."""
+    """Get all dogs for a user. Returns:
+    [
+        {
+            "bio": "good dog",
+            "birth_date": "Mon, 03 Aug 2020 00:00:00 GMT",
+            "breed": "Border Collie",
+            "id": 1,
+            "image_url": "https://paradepets.com/.image/c_limit%2Ccs_srgb%2Cq_auto:good%2Cw_760/MTkxMzY1Nzg4MTM2NzExNzc4/teacup-dogs-jpg.webp",
+            "name": "Petey",
+            "owner_username": "jules",
+            "private": false,
+            "size": "large"
+        },...
+    ]
+    
+    Must be logged in as same user in params."""
 
     if username != g.user.username:
         raise Unauthorized
     
     dogs_instances = Dog.query.filter_by(owner_username=username).all()
-    dogs = [dog_instance.serialize for dog_instance in dogs_instances]
+    dogs = [dog_instance.serialize() for dog_instance in dogs_instances]
 
     return jsonify(dogs)
 
-@app.get('/<username>/dog/<dog>')
+@app.get('/<username>/dog/<int:dog_id>')
 @require_user
-def get_users_dog(username, dog):
-    """Get dog. Must be logged in as same user in params."""
+def get_users_dog(username, dog_id):
+    """Get dog. Returns:
+    {
+        "bio": "good dog",
+        "birth_date": "2020-08-03T00:00:00",
+        "breed": "Border Collie",
+        "commands": [],
+        "events": [],
+        "id": 1,
+        "image_url": "https://paradepets.com/.image/c_limit%2Ccs_srgb%2Cq_auto:good%2Cw_760/MTkxMzY1Nzg4MTM2NzExNzc4/teacup-dogs-jpg.webp",
+        "name": "Petey",
+        "owner_username": "jules",
+        "private": false,
+        "size": "large"
+    }
+
+    Must be logged in as same user in params."""
 
     if username != g.user.username:
         raise Unauthorized
     
-    dog_instance = Dog.query.get_or_404(dog)
+    dog_instance = Dog.query.get_or_404(dog_id)
     dog = dogs_schema.dump(dog_instance)
+
+    return jsonify(dog)
 
 @app.post('/<username>/dog')
 @require_user
 def add_dog(username):
-    """Add dog. Must be logged in."""
+    """Add dog. Requires:
+    {
+        "name": "Petey",
+        "birth_date": "2020-08-03T00:00:00",
+        "breed": "Border Collie",
+        "size": "large",
+        "bio": "good dog"   // optional
+        "private": "false"   // optional, defaults to false
+        "image_url": "http://image.com   // optional
+    }
+
+    Returns:
+    {
+        "bio": "good dog",
+        "birth_date": "2020-08-03T00:00:00",
+        "breed": "Border Collie",
+        "commands": [],
+        "events": [],
+        "id": 1,
+        "image_url": "https://paradepets.com/.image/c_limit%2Ccs_srgb%2Cq_auto:good%2Cw_760/MTkxMzY1Nzg4MTM2NzExNzc4/teacup-dogs-jpg.webp",
+        "name": "Petey",
+        "owner_username": "jules",
+        "private": false,
+        "size": "large"
+    }
+    
+    Must be logged in as same user in params."""
+
+    if username != g.user.username:
+        raise Unauthorized
 
     try:
         new_dog = Dog(
@@ -215,20 +337,77 @@ def add_dog(username):
             birth_date=request.json.get("birth_date"),
             breed=request.json["breed"],
             size=request.json["size"],
-            bio=request.json["bio"],
+            bio=request.json.get("bio"),
             image_url=request.json.get("image_url"),
-            private=request.json["private"] == "True",
+            private=request.json["private"] == "true",
             owner_username=username
         )
 
-        print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", "new dog", new_dog)
         db.session.add(new_dog)
         db.session.commit()
         dog = dogs_schema.dump(new_dog)
         return jsonify(dog)
 
+    # TODO: I'm not sure this is fully debugged. The error has gone away, but
+    # we're still missing a field in the schema so I think we haven't fixed it.
     except Exception as e:
         db.session.rollback()
         # raise BadRequest("Dog not created.")
         print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", e)
         raise BadRequest
+    
+@app.patch('/<username>/dog/<int:dog_id>')
+@require_user
+def update_dog(username, dog_id):
+    """Update dog. Can take:
+    - name
+    - birth_date
+    - breed
+    - size
+    - bio
+    - image_url
+    - private
+
+    Returns:
+    {
+        "bio": "good dog",
+        "birth_date": "2020-08-03T00:00:00",
+        "breed": "Border Collie",
+        "commands": [],
+        "events": [],
+        "id": 1,
+        "image_url": "https://paradepets.com/.image/c_limit%2Ccs_srgb%2Cq_auto:good%2Cw_760/MTkxMzY1Nzg4MTM2NzExNzc4/teacup-dogs-jpg.webp",
+        "name": "Petey",
+        "owner_username": "jules",
+        "private": false,
+        "size": "large"
+    }
+    
+    Must be logged in as same user in params."""
+
+    if username != g.user.username:
+        raise Unauthorized
+    
+    dog = Dog.query.get_or_404(dog_id)
+
+    try:
+        dog.name=request.json.get("name"),
+        dog.birth_date=request.json.get("birth_date"),
+        dog.breed=request.json.get("breed"),
+        dog.size=request.json.get("size"),
+        dog.bio=request.json.get("bio"),
+        dog.image_url=request.json.get("image_url"),
+        dog.private=request.json.get("private") == "True",
+       
+        db.session.commit()
+    
+    except:
+        db.session.rollback()
+        raise BadRequest
+
+    updated_dog_instance = Dog.query.get(dog_id)
+    updated_dog = dogs_schema.dump(updated_dog_instance)
+    return jsonify(updated_dog)
+
+@app.delete('/<username>/dog/<int:dog_id>')
+@require_user

@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from flask_bcrypt import Bcrypt
 import jwt
 
+load_dotenv()
+
 bcrypt = Bcrypt()
 db = SQLAlchemy()
 ma = Marshmallow()
@@ -400,15 +402,15 @@ class DogSchema(ma.SQLAlchemyAutoSchema):
 
     commands = fields.Nested(
         "CommandSchema", 
-        only=("id", "name", "voice_command", "proficiency", "date_updated"),
+        only=("id", "name", "voice_command", "proficiency", "date_updated", "type"),
         many=True
     )
 
-    # events = fields.Nested(
-    #     "EventSchema",
-    #     only=("id", "title", "start_time", "location", "type"),
-    #     many=True
-    # )
+    events = fields.Nested(
+        "EventSchema",
+        only=("id", "title", "start_time", "location", "type"),
+        many=True
+    )
     
 
 class User(db.Model):
@@ -444,10 +446,16 @@ class User(db.Model):
         db.Text,
     )
 
+    user_image_url = db.Column(
+        db.Text,
+        nullable=False,
+        default=DEFAULT_IMAGE_URL,
+    )
+
     dogs = db.relationship("Dog", backref='owner')
 
     @classmethod
-    def signup(cls, username, password, name, email):
+    def signup(cls, username, password, name, email, user_image_url):
         """Sign up user. Hashes password and adds user to database."""
 
         hashed_pwd = bcrypt.generate_password_hash(password).decode('UTF-8')
@@ -457,6 +465,7 @@ class User(db.Model):
             password=hashed_pwd,
             name=name,
             email=email,
+            user_image_url=user_image_url
         )
 
         db.session.add(user)
@@ -474,10 +483,10 @@ class User(db.Model):
         if user:
             is_auth = bcrypt.check_password_hash(user.password, password)
             if is_auth:
-                return user.username
+                return user
         
         return False
-
+    
     @classmethod
     def create_token(cls, username):
         """Create a JWT for user and return."""
@@ -493,6 +502,7 @@ class User(db.Model):
             "email": self.email,
             "bio": self.bio,
             "location": self.location,
+            "user_image_url": self.user_image_url
             }
         
         return user
@@ -503,6 +513,15 @@ class UserSchema(ma.SQLAlchemyAutoSchema):
 
     class Meta:
         model = User
-        fields = ("id", "username", "name", "email", "bio", "location", "dogs")
+        fields = (
+            "id", 
+            "username", 
+            "name", 
+            "email", 
+            "bio", 
+            "location", 
+            "user_image_url", 
+            "dogs"
+        )
         
     dogs = fields.Nested("DogSchema", only=("id",), many=True)
