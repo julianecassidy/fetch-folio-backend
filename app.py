@@ -2,7 +2,7 @@
 
 import os
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, g
+from flask import Flask, jsonify, request, g, abort
 from flask_cors import CORS
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy import or_
@@ -57,11 +57,11 @@ def add_user_to_g():
     if token:
         try:
             data = jwt.decode(token, os.environ['SECRET_KEY'], algorithms=["HS256"])
-            current_username = User.query.get(data["username"])
-            if current_username is None:
+            current_user = User.query.get(data["username"])
+            if current_user is None:
                 raise Unauthorized("Invalid token.")
             else:
-                g.user = current_username
+                g.user = current_user
                 print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", "g", g.user)
             
         except Exception as e:
@@ -128,10 +128,34 @@ def login():
 
 #################################################################### User Routes
 
-@app.get('/users/<username>')
+@app.get('/users')
 @require_user
-def get_user(username):
-    """Get user from database. Returns:
+def get_users():
+    """Get all users. Returns:
+    [
+        {
+            "bio": null,
+            "dogs": [],
+            "email": "julianecassidy@gmail.com",
+            "location": null,
+            "name": "Jules",
+            "username": "jules"
+            "user_image_url": "https://image.com"
+        }, ...
+    ]
+
+    Must be logged in.
+    """
+
+    users_instances = User.query.all()
+    users = [user_instance.serialize() for user_instance in users_instances]
+
+    return jsonify(users)
+
+@app.get('/users/current')
+@require_user
+def get_user():
+    """Get user. Returns:
         {
         "bio": null,
         "dogs": [],
@@ -144,16 +168,15 @@ def get_user(username):
 
     Must be logged in."""
 
-    user_instance = User.query.get_or_404(username)
+    user_instance = g.user
     user = users_schema.dump(user_instance)
     return jsonify(user)
 
-@app.patch('/users/<username>')
+@app.patch('/users/current')
 @require_user
-def update_user_profile(username):
-    """Update a user's information. Requires password. Can also take:
+def update_user_profile():
+    """Update a user's information. Can take:
     {
-        "password": "password",
         "name": "Jules",
         "email": "julianecassidy@gmail.com",
         "location": "Denver",
@@ -173,15 +196,8 @@ def update_user_profile(username):
     }
 
     Must be logged in as same user in params."""
-
-    if username != g.user.username:
-        raise Unauthorized
     
-    password = request.json.get("password")
-    user = User.login(username=username, password=password)
-        
-    if not user:
-        raise Unauthorized
+    user = g.user
     
     try:
         user.name = request.json.get("name", user.name)
@@ -196,17 +212,39 @@ def update_user_profile(username):
         db.session.rollback()
         raise BadRequest
 
-    updated_user_instance = User.query.get(username)
+    updated_user_instance = User.query.get(user.username)
     updated_user = users_schema.dump(updated_user_instance)
     return jsonify(updated_user)
+
+@app.put('/users/current')
+@require_user
+def update_password(username):
+    """Updates a user's password. Requires:
+    {old_password, new_passwword}
     
-@app.delete('/users/<username>')
+    Must be logged in as same user in params."""
+   
+    user = g.user
+
+    try:
+        user.update_password
+        db.session.commit()
+
+    except Unauthorized:
+        db.session.rollback()
+        raise Unauthorized("Password incorrect")
+    
+    except:
+        db.session.rollback()
+        raise BadRequest
+
+   
+@app.delete('/users/current')
 @require_user
 def delete_user(username):
-    """Delete a user's account. Must be logged in as same user in params."""
+    """Delete a user's account. Must be logged in."""
 
-    if username != g.user.username:
-        raise Unauthorized
+    user = g.user
     
     ## TODO: need to delete dogs, commands, command notes, events
 
@@ -241,10 +279,10 @@ def get_dogs():
 
     return jsonify(dogs)
 
-@app.get('/<username>/dogs')
+@app.get('/dogs/current')
 @require_user
-def get_users_dogs(username):
-    """Get all dogs for a user. Returns:
+def get_users_dogs():
+    """Get all dogs for current user. Returns:
     [
         {
             "bio": "good dog",
@@ -259,19 +297,18 @@ def get_users_dogs(username):
         },...
     ]
     
-    Must be logged in as same user in params."""
+    Must be logged in."""
 
-    if username != g.user.username:
-        raise Unauthorized
+    username = g.user.username
     
     dogs_instances = Dog.query.filter_by(owner_username=username).all()
     dogs = [dog_instance.serialize() for dog_instance in dogs_instances]
 
     return jsonify(dogs)
 
-@app.get('/<username>/dog/<int:dog_id>')
+@app.get('/dogs/current/<int:dog_id>')
 @require_user
-def get_users_dog(username, dog_id):
+def get_users_dog(dog_id):
     """Get dog. Returns:
     {
         "bio": "good dog",
@@ -288,18 +325,15 @@ def get_users_dog(username, dog_id):
     }
 
     Must be logged in as same user in params."""
-
-    if username != g.user.username:
-        raise Unauthorized
-    
+   
     dog_instance = Dog.query.get_or_404(dog_id)
     dog = dogs_schema.dump(dog_instance)
 
     return jsonify(dog)
 
-@app.post('/<username>/dog')
+@app.post('/dogs/current')
 @require_user
-def add_dog(username):
+def add_dog():
     """Add dog. Requires:
     {
         "name": "Petey",
@@ -328,8 +362,7 @@ def add_dog(username):
     
     Must be logged in as same user in params."""
 
-    if username != g.user.username:
-        raise Unauthorized
+    username = g.user.username
 
     try:
         new_dog = Dog(
@@ -356,9 +389,9 @@ def add_dog(username):
         print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", e)
         raise BadRequest
     
-@app.patch('/<username>/dog/<int:dog_id>')
+@app.patch('/dog/current/<int:dog_id>')
 @require_user
-def update_dog(username, dog_id):
+def update_dog(dog_id):
     """Update dog. Can take:
     - name
     - birth_date
@@ -385,11 +418,13 @@ def update_dog(username, dog_id):
     
     Must be logged in as same user in params."""
 
-    if username != g.user.username:
+    user = g.user
+    dog = Dog.query.get(dog_id)
+
+    # dog is not one of logged in user's dogs
+    if dog not in user.dogs:
         raise Unauthorized
     
-    dog = Dog.query.get_or_404(dog_id)
-
     try:
         dog.name=request.json.get("name"),
         dog.birth_date=request.json.get("birth_date"),
@@ -409,5 +444,38 @@ def update_dog(username, dog_id):
     updated_dog = dogs_schema.dump(updated_dog_instance)
     return jsonify(updated_dog)
 
-@app.delete('/<username>/dog/<int:dog_id>')
+@app.delete('/dogs/current/<int:dog_id>')
 @require_user
+def delete_dog(dog_id):
+    """Remove a dog. Dog has to belong to current user. Returns "dog deleted"."""
+
+    user = g.user
+    dog = Dog.query.get(dog_id)
+
+    # dog is not one of logged in user's dogs
+    if dog not in user.dogs:
+        raise Unauthorized
+    
+    commands = dog.commands
+
+    try:
+        # delete command notes
+        [db.session.delete(command.notes) for command in commands]
+
+        # delete commands
+        Command.query.filter(Command.dog_id==dog_id).delete()
+
+        # delete events
+        Event.query.filter(Event.dog_id==dog_id).delete()
+
+        # delete dog
+        db.session.delete(dog)
+        db.session.commit()
+
+        return f"{dog.name} deleted"
+    
+    except:
+        raise BadRequest
+
+    
+    

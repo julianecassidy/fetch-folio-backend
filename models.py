@@ -7,6 +7,7 @@ from flask_marshmallow import Marshmallow
 from marshmallow import fields
 from datetime import datetime, timedelta
 from flask_bcrypt import Bcrypt
+from werkzeug.exceptions import BadRequest, Unauthorized
 import jwt
 
 load_dotenv()
@@ -492,6 +493,19 @@ class User(db.Model):
         """Create a JWT for user and return."""
 
         return jwt.encode({"username": username}, SECRET_KEY, algorithm="HS256")
+    
+    def update_password(self, old_password, new_password):
+        """Check user's old_password. If valid, update user's password to 
+        new_password."""
+
+        is_auth = bcrypt.check_password_hash(self.password, old_password)
+        if is_auth:
+            hashed_pwd = bcrypt.generate_password_hash(new_password).decode('UTF-8')
+            self.password = hashed_pwd
+            return self
+        
+        else:
+            raise Unauthorized
 
     def serialize(self):
         """Make a dictionary of current user instance."""
