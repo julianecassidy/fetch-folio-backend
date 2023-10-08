@@ -447,7 +447,8 @@ def update_dog(dog_id):
 @app.delete('/dogs/current/<int:dog_id>')
 @require_user
 def delete_dog(dog_id):
-    """Remove a dog. Dog has to belong to current user. Returns "dog deleted"."""
+    """Remove a dog. Returns "dog_name deleted".
+    Dog has to belong to current user. """
 
     user = g.user
     dog = Dog.query.get(dog_id)
@@ -478,4 +479,21 @@ def delete_dog(dog_id):
         raise BadRequest
 
     
+############################################################# Dog Command Routes
+
+@app.get('/dogs/current/<int:dog_id>/commands')
+@require_user
+def get_commands(dog_id):
+    """Get all of a dog's commands. Returns:
     
+    Must be logged in and dog must belong to current user."""
+
+    user = g.user
+    dog = Dog.query.get(dog_id)
+
+    # dog is not one of logged in user's dogs
+    if dog not in user.dogs:
+        raise Unauthorized
+    
+    commands = commands_schema.dump(dog.commands)
+    return jsonify(commands)
