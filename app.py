@@ -179,9 +179,9 @@ def update_user_profile():
     {
         "name": "Jules",
         "email": "julianecassidy@gmail.com",
-        "location": "Denver",
-        "bio": "good human",
-        "user_image_url": "https://image.com"
+        "location": "Denver", // optional
+        "bio": "good human", // optional
+        "user_image_url": "https://image.com" // optional
     }
 
     Returns:
@@ -324,9 +324,15 @@ def get_users_dog(dog_id):
         "size": "large"
     }
 
-    Must be logged in as same user in params."""
+    Must be logged in. Dog has to belong to current user."""
    
-    dog_instance = Dog.query.get_or_404(dog_id)
+    user = g.user
+    dog_instance = Dog.query.get(dog_id)
+
+    # dog is not one of logged in user's dogs
+    if dog not in user.dogs:
+        raise Unauthorized    
+    
     dog = dogs_schema.dump(dog_instance)
 
     return jsonify(dog)
@@ -360,7 +366,7 @@ def add_dog():
         "size": "large"
     }
     
-    Must be logged in as same user in params."""
+    Must be logged in."""
 
     username = g.user.username
 
@@ -416,7 +422,7 @@ def update_dog(dog_id):
         "size": "large"
     }
     
-    Must be logged in as same user in params."""
+    Must be logged in. Dog has to belong to current user."""
 
     user = g.user
     dog = Dog.query.get(dog_id)
@@ -448,7 +454,7 @@ def update_dog(dog_id):
 @require_user
 def delete_dog(dog_id):
     """Remove a dog. Returns "dog_name deleted".
-    Dog has to belong to current user. """
+    Must be logged in. Dog has to belong to current user."""
 
     user = g.user
     dog = Dog.query.get(dog_id)
@@ -485,7 +491,20 @@ def delete_dog(dog_id):
 @require_user
 def get_commands(dog_id):
     """Get all of a dog's commands. Returns:
-    
+    [
+        {
+            "command_video_url": "",
+            "date_introduced": "2023-10-12T03:19:12.587642",
+            "date_updated": "2023-10-12T03:19:12.587643",
+            "description": "standard sit",
+            "id": 2,
+            "name": "sit",
+            "notes": [],
+            "proficiency": 3,
+            "type": "obedience",
+            "voice_command": "sit"
+        }, ...
+    ]    
     Must be logged in and dog must belong to current user."""
 
     user = g.user
@@ -495,5 +514,203 @@ def get_commands(dog_id):
     if dog not in user.dogs:
         raise Unauthorized
     
-    commands = commands_schema.dump(dog.commands)
+    commands = [commands_schema.dump(command) for command in dog.commands]
     return jsonify(commands)
+
+@app.get('/dogs/current/<int:dog_id>/commands/<int:command_id>')
+@require_user
+def get_command_details(dog_id, command_id):
+    """Get a dog's command details. Returns:
+    {
+        "command_video_url": "",
+        "date_introduced": "2023-10-12T03:19:12.587642",
+        "date_updated": "2023-10-12T03:19:12.587643",
+        "description": "standard sit",
+        "id": 2,
+        "name": "sit",
+        "notes": [],
+        "proficiency": 3,
+        "type": "obedience",
+        "voice_command": "sit"
+    }
+    Must be logged in and dog must belong to current user."""
+
+    user = g.user
+    dog = Dog.query.get(dog_id)
+
+    # dog is not one of logged in user's dogs
+    if dog not in user.dogs:
+        raise Unauthorized
+    
+    command_instance = Command.query.get(command_id)
+
+    # command is not one of dog's commands
+    if command_instance not in dog.commands:
+        abort(404)
+
+    command = commands_schema.dump(command_instance)
+    return jsonify(command)
+
+@app.post('/dogs/current/<int:dog_id>/commands')
+@require_user
+def add_command(dog_id):
+    """Add command. Requires:
+    {
+        "name": "sit",
+        "voice_command": "sit", // optional
+        "description": "standard sit", // optional
+        "visual_command": "raise pinched fingers to lips", // optional
+        "proficiency": 3, // optional, defaults to 1
+        "type": "obedience", // optional
+        "command_video_url": "", // optional
+        "performance_video_url": "", // optional
+    }
+    
+    Returns:
+    {
+        "command_video_url": "",
+        "date_introduced": "2023-10-12T02:54:29.134549",
+        "date_updated": "2023-10-12T02:54:29.134551",
+        "description": "standard sit",
+        "id": 5,
+        "name": "sit",
+        "notes": [],
+        "proficiency": 3,
+        "type": "obedience",
+        "voice_command": "sit",
+        "performance_video_url": ""
+    }
+    
+    Must be logged in and dog must belong to current user."""
+    
+    user = g.user
+    dog = Dog.query.get(dog_id)
+
+    # dog is not one of logged in user's dogs
+    if dog not in user.dogs:
+        raise Unauthorized
+    
+    try:
+        new_command = Command(
+            name=request.json["name"],
+            description=request.json.get("description"),
+            voice_command=request.json.get("voice_command"),
+            visual_command=request.json.get("visual_command"),
+            command_video_url=request.json.get("command_video_url"),
+            proficiency=request.json.get("proficiency"),
+            performance_video_url=request.json.get("performance_video_url"),
+            type=request.json.get("type"),
+            dog_id=dog.id,
+        )
+
+        db.session.add(new_command)
+        db.session.commit()
+        command = commands_schema.dump(new_command)
+        return jsonify(command)
+    
+    except:
+        db.session.rollback()
+        raise BadRequest
+
+@app.patch('/dogs/current/<int:dog_id>/commands/<int:command_id>')
+@require_user
+def update_command(dog_id, command_id):
+    """Add command. Can take:
+    {
+        "name": "sit",
+        "voice_command": "sit",
+        "description": "standard sit",
+        "visual_command": "raise pinched fingers to lips",
+        "proficiency": 3,
+        "type": "obedience",
+        "command_video_url": "",
+        "performance_video_url": "",
+    }
+    
+    Returns:
+    {
+        "command_video_url": "",
+        "date_introduced": "2023-10-12T02:54:29.134549",
+        "date_updated": "2023-10-12T02:54:29.134551",
+        "description": "standard sit",
+        "id": 5,
+        "name": "sit",
+        "notes": [],
+        "proficiency": 3,
+        "type": "obedience",
+        "voice_command": "sit",
+        "performance_video_url": ""
+    }    
+    Must be logged in and dog must belong to current user."""
+
+    user = g.user
+    dog = Dog.query.get(dog_id)
+
+    # dog is not one of logged in user's dogs
+    if dog not in user.dogs:
+        raise Unauthorized
+
+    command = Command.query.get(command_id)
+
+    # command is not one of dog's commands
+    if command not in dog.commands:
+        abort(404)
+
+    try:
+        command.name=request.json.get("name", command.name)
+        command.description=request.json.get("description", command.description)
+        command.voice_command=request.json.get("voice_command", command.voice_command)
+        command.visual_command=request.json.get("visual_command", command.visual_command)
+        command.command_video_url=request.json.get("command_video_url", command.command_video_url)
+        command.proficiency=request.json.get("proficiency", command.proficiency)
+        command.performance_viddeo_url=request.json.get("performance_video_url", command.performance_video_url)
+        command.type=request.json.get("type", command.type)
+
+        command.update_date()
+
+        db.session.commit()
+
+    except:
+        db.session.rollback()
+        raise BadRequest
+    
+    updated_command_instance = Command.query.get(command_id)
+    command = commands_schema.dump(updated_command_instance)
+    return jsonify(command)
+
+@app.delete('/dogs/current/<int:dog_id>/commands/<int:command_id>')
+@require_user
+def delete_command(dog_id, command_id):
+    """Remove a command. Returns "command_name deleted".
+    Must be logged in. Dog has to belong to current user."""
+
+    user = g.user
+    dog = Dog.query.get(dog_id)
+
+    # dog is not one of logged in user's dogs
+    if dog not in user.dogs:
+        raise Unauthorized
+
+    command = Command.query.get(command_id)
+
+    # command is not one of dog's commands
+    if command not in dog.commands:
+        abort(404)
+
+    try:
+        # delete command notes
+        [db.session.delete(note) for note in command.notes]
+
+        # delete command
+        db.session.delete(command)
+
+        db.session.commit()
+
+        return f"{command.name} deleted"
+    
+    except Exception as e:
+        print("\033[96m"+ 'PRINT >>>>> ' + "\033[00m", e)
+        raise BadRequest
+
+
+

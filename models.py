@@ -107,7 +107,7 @@ class Command(db.Model):
     )
 
     visual_command = db.Column(
-        db.String(100),
+        db.String(200),
         nullable=False,
         default='',
     )
@@ -145,6 +145,11 @@ class Command(db.Model):
     notes = db.relationship("CommandNote", backref="command")
 
     # dog = relationship from command to the dog
+
+    def update_date(self):
+        """Update date_updated to current date."""
+
+        self.date_updated = datetime.utcnow
 
 
 class CommandSchema(ma.SQLAlchemyAutoSchema):
@@ -217,6 +222,12 @@ class CommandTemplate(db.Model):
         db.Integer,
         nullable=False,
         default=1,
+    )
+
+    performance_video_url = db.Column(
+        db.Text,
+        nullable=False,
+        default='',
     )
 
     type = db.Column(
